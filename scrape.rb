@@ -26,7 +26,8 @@ end
 
 
 def persist_html(name, contents)
-  IO.write("./data/" + name + ".html", contents)
+  IO.write("./test/" + name + ".html", contents)
+  # IO.write("./data/" + name + ".html", contents)
 end
 
 def dl_pages
@@ -42,17 +43,54 @@ def dl_pages
   end
 end
 
-def crawl_for_email(url)
+def crawl_page_for_email(url)
   contents = fetch(url)
+  crawl_for_email(contents)
+end
+
+def crawl_for_email(contents)
+  email_regex = /@[A-Za-z]+.(gov|edu).sg/
   doc = Nokogiri::HTML(contents)
   agency_title = doc.css(".agency-title")
     .css("h1")
     .first
     .text
   addr = doc.css("address")
+
+  # find me the email
   email = addr.css("a")
-      .map { |a| a.text }
-      .select { |text| text.match(/@[A-Za-z]+.gov.sg/) }
+    .map { |a| (a.key? "text" ? a.text : nil) }
+    .select { |text| text != false and text.match(email_regex) }
+
+  if email.length == 0
+    div = doc.css('.section-body')
+      .map {|d| d.css('.email')}
+      .flatten
+      .drop_while { |d| d.text.strip.length == 0 }
+
+    if div.length > 0
+      matches =  div.first.text.match(email_regex)
+      if matches != nil
+        email = matches.string
+      end
+    end
+  end
+
+  # for those pages where email is not found in .section-body
+  # eg AGC
+  if email.length == 0
+    div = doc.css('.section-info')
+      .css('.email')
+      .drop_while { |d| d.text.strip.length == 0 }
+
+    if div.length > 0
+      matches =  div.first.text.match(email_regex)
+      if matches != nil
+        email = matches.string
+      end
+    end
+  end
+
   {
     :agency_name => agency_title,
     :email => email
@@ -74,12 +112,24 @@ if __FILE__ == $0
     end
   end
 
-  links.each_with_index do |link, i|
-    # if i > 2
-    #   break
-    # end
-    puts link
-    # contents = fetch(BASE_URL + link)
-    puts crawl_for_email(BASE_URL + link)
+  File.open('output.txt', 'w') do |file|
+    # file.write @string
+    links.each_with_index do |link, i|
+      # if i > 1
+      #   break
+      # end
+      # contents = fetch(BASE_URL + link)
+      dict = crawl_page_for_email(BASE_URL + link)
+      file.puts link 
+      file.puts "#{dict[:agency_name]}; #{dict[:email]}"
+    end
   end
+  
+  # persist_html('wsg', fetch('https://www.gov.sg/sgdi/ministries/mom/statutory-boards/wsg'))
+  # persist_html('agc', fetch('https://www.gov.sg/sgdi/organs-of-state/agc'))
+  # file = File.open('./test/agc.html', 'r')
+  # contents = file.read
+  # puts crawl_for_email(contents)
+  # file.close
 end
+
